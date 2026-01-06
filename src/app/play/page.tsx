@@ -35,6 +35,8 @@ import {
   searchAnime,
   initDanmakuModule,
   getDanmakuFromCache,
+  saveDanmakuDisplayState,
+  loadDanmakuDisplayState,
 } from '@/lib/danmaku/api';
 import {
   getDanmakuSourceIndex,
@@ -347,6 +349,14 @@ function PlayPageClient() {
   const danmakuPluginRef = useRef<any>(null);
   const danmakuSettingsRef = useRef(danmakuSettings);
 
+  // 弹幕显示状态的 ref，初始化时从 localStorage 读取
+  const danmakuDisplayStateRef = useRef<boolean>(
+    (() => {
+      const saved = loadDanmakuDisplayState();
+      return saved !== false; // null 或 true 都返回 true
+    })()
+  );
+
   // 弹幕热力图完全禁用开关（默认不禁用，即启用热力图功能）
   const [danmakuHeatmapDisabled, setDanmakuHeatmapDisabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -564,11 +574,9 @@ function PlayPageClient() {
 
     console.log(`[弹幕] 剧集切换到第 ${currentEpisodeIndex + 1} 集，自动加载弹幕`);
 
-    // 立即清空当前弹幕
+    // 立即清空当前弹幕（使用 reset 方法，不触发显示/隐藏事件）
     if (danmakuPluginRef.current) {
-      danmakuPluginRef.current.hide();
-      danmakuPluginRef.current.config({ danmuku: [] });
-      danmakuPluginRef.current.load();
+      danmakuPluginRef.current.reset();
       setDanmakuCount(0);
     }
 
@@ -642,11 +650,12 @@ function PlayPageClient() {
           });
           danmakuPluginRef.current.load();
 
-          // 根据设置显示或隐藏弹幕
-          if (currentSettings.enabled) {
-            danmakuPluginRef.current.show();
-          } else {
+          // 根据保存的显示状态来决定显示或隐藏弹幕
+          const savedDisplayState = loadDanmakuDisplayState();
+          if (savedDisplayState === false) {
             danmakuPluginRef.current.hide();
+          } else {
+            danmakuPluginRef.current.show();
           }
 
           setDanmakuCount(danmakuData.length);
@@ -1580,6 +1589,12 @@ function PlayPageClient() {
 
     if (artPlayerRef.current) {
       try {
+        // 在销毁前先移除弹幕显示/隐藏事件监听器，避免 destroy 时触发 hide 事件导致状态被错误保存
+        if (artPlayerRef.current) {
+          artPlayerRef.current.off('artplayerPluginDanmuku:show');
+          artPlayerRef.current.off('artplayerPluginDanmuku:hide');
+        }
+
         // 在销毁前从弹幕插件读取最新配置并保存
         if (danmakuPluginRef.current?.option && artPlayerRef.current.storage) {
           // 获取当前弹幕设置的快照，避免循环引用
@@ -2970,12 +2985,8 @@ function PlayPageClient() {
     setDanmakuLoading(true);
 
     try {
-      // 先清空当前弹幕并隐藏
-      danmakuPluginRef.current.hide();
-      danmakuPluginRef.current.config({
-        danmuku: [],
-      });
-      danmakuPluginRef.current.load();
+      // 先清空当前弹幕（使用 reset 方法，不触发显示/隐藏事件）
+      danmakuPluginRef.current.reset();
 
       // 获取弹幕数据（使用 title + episodeIndex 缓存）
       const title = videoTitleRef.current;
@@ -3039,11 +3050,12 @@ function PlayPageClient() {
       });
       danmakuPluginRef.current.load();
 
-      // 根据设置显示或隐藏弹幕
-      if (currentSettings.enabled) {
-        danmakuPluginRef.current.show();
-      } else {
+      // 根据保存的显示状态来决定显示或隐藏弹幕
+      const savedDisplayState = loadDanmakuDisplayState();
+      if (savedDisplayState === false) {
         danmakuPluginRef.current.hide();
+      } else {
+        danmakuPluginRef.current.show();
       }
 
       setDanmakuCount(danmakuData.length);
@@ -3095,11 +3107,9 @@ function PlayPageClient() {
         });
       }
 
-      // 加载弹幕到播放器
+      // 加载弹幕到播放器（使用 reset 方法清空，不触发显示/隐藏事件）
       if (danmakuPluginRef.current) {
-        danmakuPluginRef.current.hide();
-        danmakuPluginRef.current.config({ danmuku: [] });
-        danmakuPluginRef.current.load();
+        danmakuPluginRef.current.reset();
 
         const currentSettings = danmakuSettingsRef.current;
         danmakuPluginRef.current.config({
@@ -3112,10 +3122,12 @@ function PlayPageClient() {
         });
         danmakuPluginRef.current.load();
 
-        if (currentSettings.enabled) {
-          danmakuPluginRef.current.show();
-        } else {
+        // 根据保存的显示状态来决定显示或隐藏弹幕
+        const savedDisplayState = loadDanmakuDisplayState();
+        if (savedDisplayState === false) {
           danmakuPluginRef.current.hide();
+        } else {
+          danmakuPluginRef.current.show();
         }
       }
 
@@ -3342,11 +3354,12 @@ function PlayPageClient() {
         });
         danmakuPluginRef.current.load();
 
-        // 根据设置显示或隐藏弹幕
-        if (currentSettings.enabled) {
-          danmakuPluginRef.current.show();
-        } else {
+        // 根据保存的显示状态来决定显示或隐藏弹幕
+        const savedDisplayState = loadDanmakuDisplayState();
+        if (savedDisplayState === false) {
           danmakuPluginRef.current.hide();
+        } else {
+          danmakuPluginRef.current.show();
         }
 
         setDanmakuCount(danmakuData.length);
@@ -4027,6 +4040,8 @@ function PlayPageClient() {
             heatmap: false, // 禁用 artplayer 自带热力图，使用自定义热力图
             // 主题
             theme: 'dark',
+            // 根据保存的显示状态设置初始可见性
+            visible: danmakuDisplayStateRef.current,
             filter: (danmu: any) => {
               // 应用过滤规则
               const filterConfig = danmakuFilterConfigRef.current;
@@ -4981,15 +4996,23 @@ function PlayPageClient() {
             }
           });
 
-          // 根据设置显示或隐藏弹幕
-          if (danmakuSettingsRef.current.enabled) {
-            danmakuPluginRef.current.show();
-          } else {
-            danmakuPluginRef.current.hide();
-          }
-
           // 自动搜索并加载弹幕
           await autoSearchDanmaku();
+
+          
+          if (artPlayerRef.current) {
+            // 监听弹幕显示/隐藏事件，保存开关状态到 localStorage
+            artPlayerRef.current.on('artplayerPluginDanmuku:show', () => {
+              danmakuDisplayStateRef.current = true;
+              saveDanmakuDisplayState(true);
+            });
+
+            artPlayerRef.current.on('artplayerPluginDanmuku:hide', () => {
+              danmakuDisplayStateRef.current = false;
+              saveDanmakuDisplayState(false);
+            });
+          }
+         
         }
 
         // 播放器就绪后，如果正在播放则请求 Wake Lock
